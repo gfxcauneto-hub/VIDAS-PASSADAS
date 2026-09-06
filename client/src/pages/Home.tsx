@@ -22,8 +22,22 @@ const vturbPlayers = {
   long: { id: "vid-6a9b3ecb7356a80134687f0e", player: "6a9b3ecb7356a80134687f0e" },
 } as const;
 
-function VturbPlayer({ player, onTime }: { player: string; onTime: (time: number) => void }) {
+type SmartPlayerInstance = {
+  on?: (event: string, handler: () => void) => void;
+  off?: (event: string, handler: () => void) => void;
+  video?: { currentTime?: number };
+};
+
+type SmartPlayerGlobal = {
+  instances?: SmartPlayerInstance[];
+};
+
+function VturbPlayer({ player, onTime, onPlaybackStart }: { player: string; onTime: (time: number) => void; onPlaybackStart?: () => void }) {
   const hostRef = useRef<HTMLDivElement>(null);
+  const onTimeRef = useRef(onTime);
+  const onPlaybackStartRef = useRef(onPlaybackStart);
+  useEffect(() => { onTimeRef.current = onTime; }, [onTime]);
+  useEffect(() => { onPlaybackStartRef.current = onPlaybackStart; }, [onPlaybackStart]);
   useEffect(() => {
     const host = hostRef.current;
     if (!host) return;
@@ -52,7 +66,44 @@ function VturbPlayer({ player, onTime }: { player: string; onTime: (time: number
       script.async = true;
       document.head.appendChild(script);
     }
-    return () => { host.replaceChildren(); };
+    let boundInstance: SmartPlayerInstance | undefined;
+    let attempts = 0;
+    let retryTimer: number | undefined;
+    let playbackStarted = false;
+    const getInstance = () => (window as Window & { smartplayer?: SmartPlayerGlobal }).smartplayer?.instances?.[0];
+    const markPlaybackStarted = () => {
+      if (playbackStarted) return;
+      playbackStarted = true;
+      onPlaybackStartRef.current?.();
+    };
+    const handleTimeUpdate = () => {
+      const instance = getInstance();
+      const currentTime = instance?.video?.currentTime ?? 0;
+      onTimeRef.current(currentTime);
+      if (currentTime > 0) markPlaybackStarted();
+    };
+    const bindPlayerEvents = () => {
+      const instance = getInstance();
+      if (!instance?.on) {
+        if (attempts < 120) {
+          attempts += 1;
+          retryTimer = window.setTimeout(bindPlayerEvents, 250);
+        }
+        return;
+      }
+      instance.on("play", markPlaybackStarted);
+      instance.on("playing", markPlaybackStarted);
+      instance.on("timeupdate", handleTimeUpdate);
+      boundInstance = instance;
+    };
+    bindPlayerEvents();
+    return () => {
+      if (retryTimer) window.clearTimeout(retryTimer);
+      boundInstance?.off?.("play", markPlaybackStarted);
+      boundInstance?.off?.("playing", markPlaybackStarted);
+      boundInstance?.off?.("timeupdate", handleTimeUpdate);
+      host.replaceChildren();
+    };
   }, [player]);
   return <div ref={hostRef} className="w-full" aria-label="Vídeo hospedado na VTurb" />;
 }
@@ -84,8 +135,6 @@ function Button({ children, onClick, disabled = false, secondary = false }: { ch
 }
 
 function Landing({ start }: { start: (gender: Gender) => void }) {
-  const [selectedGender, setSelectedGender] = useState<Gender>();
-  const chooseGender = (gender: Gender) => { setSelectedGender(gender); window.setTimeout(() => start(gender), 220); };
   return <Shell><div className="flex flex-1 flex-col items-center pt-24 text-center sm:pt-28">
     <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-[#e4b95b]/70 bg-[#201b36] px-4 py-1.5 text-[10px] font-extrabold tracking-[.16em] text-[#f2d479]">TESTE GRATUITO</div>
     <div className="relative mb-5 w-full max-w-[350px] overflow-hidden rounded-t-xl bg-[#211c43] shadow-[0_18px_45px_rgba(32,20,87,.4)] sm:max-w-[360px]">
@@ -94,7 +143,7 @@ function Landing({ start }: { start: (gender: Gender) => void }) {
     </div>
     <h1 className="max-w-[350px] text-[1.95rem] font-black leading-[1.02] tracking-[-.035em] sm:max-w-lg sm:text-4xl">Descubra <span className="text-[#f2d479]">quem você foi</span><br /> numa <span className="text-[#f2d479]">vida passada</span></h1>
     <p className="mt-5 max-w-[350px] text-[16px] leading-relaxed text-[#a8a1b5] sm:text-base">Responda 7 perguntas rápidas. Seus <strong className="text-white">números</strong> mostram quem você foi — e por que isso explica tanta coisa hoje.</p>
-    <div className="mt-auto w-full max-w-[350px] pt-20 sm:pt-24"><p className="mb-2 text-sm font-bold text-white">Você é:</p><div className="grid grid-cols-2 gap-1"><button onClick={() => { localStorage.setItem("astra-clone-answers", JSON.stringify({ ...readAnswers(), gender: "feminino" })); chooseGender("feminino"); }} className={`rounded-l-xl border-2 px-3 py-5 text-[17px] font-extrabold transition-all duration-200 hover:-translate-y-1 active:scale-[.97] ${selectedGender === "feminino" ? "border-[#7c3aed] bg-[#7c3aed] text-white shadow-[0_0_18px_rgba(124,58,237,.24)]" : "border-white bg-white text-[#242229] shadow-[0_0_18px_rgba(255,255,255,.12)] hover:bg-white/90"}`}>👩<span className="ml-2">MULHER</span></button><button onClick={() => { localStorage.setItem("astra-clone-answers", JSON.stringify({ ...readAnswers(), gender: "masculino" })); chooseGender("masculino"); }} className={`rounded-r-xl border-2 px-3 py-5 text-[17px] font-extrabold transition-all duration-200 hover:-translate-y-1 active:scale-[.97] ${selectedGender === "masculino" ? "border-[#7c3aed] bg-[#7c3aed] text-white shadow-[0_0_18px_rgba(124,58,237,.24)]" : "border-white bg-white text-[#242229] shadow-[0_0_18px_rgba(255,255,255,.12)] hover:bg-white/90"}`}>👨<span className="ml-2">HOMEM</span></button></div><div className="mt-2 flex justify-center gap-2 text-xs text-[#8d859b]"><span>⏱ Leva menos de 2 minutos</span><span>·</span><span>🔒 100% anônimo</span></div></div>
+    <div className="mt-auto w-full max-w-[350px] pt-20 sm:pt-24"><p className="mb-2 text-sm font-bold text-white">Você é:</p><div className="grid grid-cols-2 gap-1"><button onClick={() => { localStorage.setItem("astra-clone-answers", JSON.stringify({ ...readAnswers(), gender: "feminino" })); start("feminino"); }} className="rounded-l-xl border-2 border-[#7c3aed] bg-[#211b3e] px-3 py-5 text-[17px] font-extrabold text-white shadow-[0_0_18px_rgba(124,58,237,.24)] transition-all duration-200 hover:-translate-y-1 hover:bg-[#2c2252] active:scale-[.97]">👩<span className="ml-2">MULHER</span></button><button onClick={() => { localStorage.setItem("astra-clone-answers", JSON.stringify({ ...readAnswers(), gender: "masculino" })); start("masculino"); }} className="rounded-r-xl border-2 border-[#7c3aed] bg-[#211b3e] px-3 py-5 text-[17px] font-extrabold text-white shadow-[0_0_18px_rgba(124,58,237,.24)] transition-all duration-200 hover:-translate-y-1 hover:bg-[#2c2252] active:scale-[.97]">👨<span className="ml-2">HOMEM</span></button></div><div className="mt-2 flex justify-center gap-2 text-xs text-[#8d859b]"><span>⏱ Leva menos de 2 minutos</span><span>·</span><span>🔒 100% anônimo</span></div></div>
   </div><footer className="pt-8 text-center text-[11px] text-[#675f75]"><nav aria-label="Links legais" className="flex flex-wrap items-center justify-center gap-x-3 gap-y-2"><a href="https://www.astranumerica.com.br/contato" target="_blank" rel="noreferrer" className="transition hover:text-[#f2d479]">Contato</a><span aria-hidden="true">·</span><a href="https://www.astranumerica.com.br/afiliados" target="_blank" rel="noreferrer" className="transition hover:text-[#f2d479]">Afiliados</a><span aria-hidden="true">·</span><a href="/politica-de-privacidade" className="transition hover:text-[#f2d479]">Política de Privacidade</a><span aria-hidden="true">·</span><a href="https://www.astranumerica.com.br/termos-de-uso" target="_blank" rel="noreferrer" className="transition hover:text-[#f2d479]">Termos de Uso</a></nav><span className="mt-3 inline-block">© 2026 Vidana Astranumerica. Todos os direitos reservados.</span></footer></Shell>;
 }
 
@@ -124,6 +173,9 @@ function digitSum(value: number) {
 function nameNumber(value: string) {
   return digitSum(value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/[^A-Z]/g, "").split("").reduce((sum, c) => sum + ((c.charCodeAt(0) - 65) % 9) + 1, 0));
 }
+const femaleOverlayWindows = [[0, 4], [48, 54], [250, 257], [296, 355]] as const;
+const secondOverlayWindows = [[0, 5]] as const;
+
 function BirthOverlay({ second, answers, visible }: { second?: boolean; answers: Answers; visible: boolean }) {
   if (!visible) return null;
   const date = answers.day && answers.month && answers.year ? `${String(answers.day).padStart(2, "0")}/${String(answers.month).padStart(2, "0")}/${answers.year}` : "";
@@ -139,18 +191,25 @@ function Vsl({ second, answers, go }: { second?: boolean; answers: Answers; go: 
   const player = second ? vturbPlayers.long : (isMale ? vturbPlayers.male : vturbPlayers.female);
   const releaseAt = isMale ? 302 : 297;
   const [canContinue, setCanContinue] = useState(false);
-  const [showBirthOverlay, setShowBirthOverlay] = useState(true);
+  const [showBirthOverlay, setShowBirthOverlay] = useState(false);
+  const playbackStartedRef = useRef(false);
+  const overlayWindows = second ? secondOverlayWindows : isMale ? [] : femaleOverlayWindows;
+  const handlePlaybackStart = () => { playbackStartedRef.current = true; };
+  const handleVideoTime = (time: number) => {
+    if (!playbackStartedRef.current) return;
+    const visible = overlayWindows.some(([start, end]) => time >= start && time <= end);
+    setShowBirthOverlay(previous => previous === visible ? previous : visible);
+  };
   useEffect(() => {
-    setShowBirthOverlay(true);
-    const timer = window.setTimeout(() => setShowBirthOverlay(false), 5000);
-    return () => window.clearTimeout(timer);
+    setShowBirthOverlay(false);
+    playbackStartedRef.current = false;
   }, [player]);
   useEffect(() => {
     if (second) return;
     const timer = window.setTimeout(() => setCanContinue(true), releaseAt * 1000);
     return () => window.clearTimeout(timer);
   }, [second, releaseAt]);
-  return <Shell><div className="flex flex-1 flex-col items-center justify-center"><div className="mb-5 text-center"><div className="mb-3 inline-flex items-center gap-2 text-xs font-bold tracking-[.2em] text-[#f2d479]"><Star size={14} fill="currentColor" /> SUA LEITURA PERSONALIZADA</div><h2 className="text-2xl font-extrabold">{second ? `${answers.fname || "Seu"}, aqui está a sua revelação` : isMale ? `Assista até o fim para descobrir o seu resultado` : `Assista até o fim para descobrir o seu resultado`}</h2></div><div className="relative w-full max-w-[404px] overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl"><VturbPlayer player={player.player} onTime={() => undefined} /><BirthOverlay second={second} answers={answers} visible={showBirthOverlay} /></div>{!second && <div className={`mt-7 w-full max-w-sm transition-opacity ${canContinue ? "opacity-100" : "pointer-events-none opacity-0"}`}><Button onClick={() => window.setTimeout(() => go("lead"), 220)} disabled={!canContinue}>Continuar <ArrowRight className="ml-2 inline" size={18} /></Button></div>}{second && <p className="mt-5 text-center text-xs text-[#8e879b]">Você pode pausar ou avançar usando os controles do vídeo.</p>}</div></Shell>;
+  return <Shell><div className="flex flex-1 flex-col items-center justify-center"><div className="mb-5 text-center"><div className="mb-3 inline-flex items-center gap-2 text-xs font-bold tracking-[.2em] text-[#f2d479]"><Star size={14} fill="currentColor" /> SUA LEITURA PERSONALIZADA</div><h2 className="text-2xl font-extrabold">{second ? `${answers.fname || "Seu"}, aqui está a sua revelação` : isMale ? `Assista até o fim para descobrir o seu resultado` : `Assista até o fim para descobrir o seu resultado`}</h2></div><div className="relative w-full max-w-[404px] overflow-hidden rounded-2xl border border-white/10 bg-black shadow-2xl"><VturbPlayer player={player.player} onTime={handleVideoTime} onPlaybackStart={handlePlaybackStart} /><BirthOverlay second={second} answers={answers} visible={showBirthOverlay} /></div>{!second && <div className={`mt-7 w-full max-w-sm transition-opacity ${canContinue ? "opacity-100" : "pointer-events-none opacity-0"}`}><Button onClick={() => window.setTimeout(() => go("lead"), 220)} disabled={!canContinue}>Continuar <ArrowRight className="ml-2 inline" size={18} /></Button></div>}{second && <p className="mt-5 text-center text-xs text-[#8e879b]">Você pode pausar ou avançar usando os controles do vídeo.</p>}</div></Shell>;
 }
 
 function Lead({ answers, submit }: { answers: Answers; submit: (a: Partial<Answers>) => void }) {
