@@ -191,7 +191,7 @@ function Vsl({ second, answers, go }: { second?: boolean; answers: Answers; go: 
   const player = second ? vturbPlayers.long : (isMale ? vturbPlayers.male : vturbPlayers.female);
   const releaseAt = isMale ? 302 : 297;
   const [canContinue, setCanContinue] = useState(false);
-  const [showBirthOverlay, setShowBirthOverlay] = useState(false);
+  const [showBirthOverlay, setShowBirthOverlay] = useState(!isMale);
   const playbackStartedRef = useRef(false);
   const overlayWindows = second ? secondOverlayWindows : isMale ? [] : femaleOverlayWindows;
   const handlePlaybackStart = () => { playbackStartedRef.current = true; };
@@ -201,9 +201,9 @@ function Vsl({ second, answers, go }: { second?: boolean; answers: Answers; go: 
     setShowBirthOverlay(previous => previous === visible ? previous : visible);
   };
   useEffect(() => {
-    setShowBirthOverlay(false);
+    setShowBirthOverlay(!isMale);
     playbackStartedRef.current = false;
-  }, [player]);
+  }, [player, isMale]);
   useEffect(() => {
     if (second) return;
     const timer = window.setTimeout(() => setCanContinue(true), releaseAt * 1000);
@@ -217,12 +217,40 @@ function Lead({ answers, submit }: { answers: Answers; submit: (a: Partial<Answe
   const [name, setName] = useState(answers.fullName || "");
   const [email, setEmail] = useState(answers.email || "");
   const [remaining, setRemaining] = useState(60000);
-  useEffect(() => { const started = performance.now(); const timer = window.setInterval(() => { const elapsed = performance.now() - started; const value = 60000 - (elapsed % 60000); setRemaining(value); }, 50); return () => clearInterval(timer); }, []);
-  const validName = name.trim().length >= 3 && name.trim().includes(" ");
-  const validEmail = email.includes("@");
+  useEffect(() => {
+    const started = performance.now();
+    const timer = window.setInterval(() => {
+      const elapsed = performance.now() - started;
+      setRemaining(60000 - (elapsed % 60000));
+    }, 50);
+    return () => clearInterval(timer);
+  }, []);
+  const validName = name.trim().length >= 3;
+  const validEmail = email.trim().includes("@");
   const seconds = Math.floor(remaining / 1000).toString().padStart(2, "0");
   const millis = Math.floor(remaining % 1000).toString().padStart(3, "0");
-  return <main className="min-h-screen bg-[#3a205e] px-6 text-center text-white"><div className="mx-auto flex min-h-screen w-full max-w-[380px] flex-col items-center justify-center gap-4 py-8"><div className="w-full rounded-xl bg-[#f2ad35] px-4 py-3.5 text-xl font-black tracking-tight text-white shadow-[0_0_20px_rgba(242,173,53,.35)]">⏱️ 00:{seconds}.{millis}</div>{step === "fullName" ? <><p className="max-w-[340px] text-[16px] leading-[1.3]">Falta pouco, <strong>{(answers.fname || "").toUpperCase()}</strong>! Precisamos do seu nome completo para revelar o <strong>último número da sua vida passada.</strong></p><h2 className="text-[31px] font-black leading-[1.05] tracking-[-.02em]">Qual é o seu nome<br />completo?</h2><div className="grid h-8 w-8 place-items-center rounded-full bg-[#c84ee6] text-lg">↓</div><input autoFocus value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === "Enter" && validName && setStep("email")} placeholder="Digite seu nome completo (obrigatório)" aria-label="Nome completo" className="w-full rounded-xl border-4 border-[#b66bd8] bg-white px-3 py-4 text-[16px] text-[#555] outline-none placeholder:text-[#aaa]" /><button onClick={() => validName && setStep("email")} className="w-full rounded-xl bg-[#be69df] px-5 py-4 text-lg font-black text-white shadow-[0_0_20px_rgba(190,105,223,.3)] transition active:scale-[.98] disabled:opacity-50" disabled={!validName}>Continuar</button></> : <><p className="max-w-[340px] text-[16px] leading-[1.3]">Digite o seu <strong>e-mail</strong> para receber o resultado da sua <strong>vida passada</strong>...</p><h2 className="text-[31px] font-black leading-[1.05]">Qual é o seu e-mail?</h2><div className="grid h-8 w-8 place-items-center rounded-full bg-[#c84ee6] text-lg">↓</div><input autoFocus type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && validEmail && submit({ fullName: name.trim(), email: email.trim() })} placeholder="Insira seu endereço de e-mail (obrigatório)" aria-label="E-mail" className="w-full rounded-xl border-4 border-[#b66bd8] bg-white px-3 py-4 text-[16px] text-[#555] outline-none placeholder:text-[#aaa]" /><button onClick={() => validEmail && submit({ fullName: name.trim(), email: email.trim() })} className="w-full rounded-xl bg-[#be69df] px-5 py-4 text-lg font-black text-white shadow-[0_0_20px_rgba(190,105,223,.3)] transition active:scale-[.98] disabled:opacity-50" disabled={!validEmail}>Ver meu resultado</button><button onClick={() => setStep("fullName")} className="text-sm font-bold text-white/80 underline">Voltar</button></>}</div></main>;
+  const continueWithName = () => { if (validName) setStep("email"); };
+  const submitLead = () => { if (validEmail) submit({ fullName: name.trim(), email: email.trim() }); };
+  const buttonClass = "w-full rounded-xl bg-[#be69df] px-5 py-4 text-lg font-black text-white shadow-[0_0_20px_rgba(190,105,223,.3)] transition hover:bg-[#d080ec] active:scale-[.98] disabled:cursor-not-allowed disabled:opacity-50";
+  return <main className="min-h-[100svh] overflow-y-auto bg-[#3a205e] px-6 text-center text-white">
+    <div className="mx-auto flex min-h-[100svh] w-full max-w-[380px] flex-col items-center justify-center gap-4 py-8">
+      <div className="w-full rounded-xl bg-[#f2ad35] px-4 py-3.5 text-xl font-black tracking-tight text-white shadow-[0_0_20px_rgba(242,173,53,.35)]">⏱️ 00:{seconds}.{millis}</div>
+      {step === "fullName" ? <>
+        <p className="max-w-[340px] text-[16px] leading-[1.3]">Falta pouco, <strong>{(answers.fname || "").toUpperCase()}</strong>! Precisamos do seu nome completo para revelar o <strong>último número da sua vida passada.</strong></p>
+        <h2 className="text-[31px] font-black leading-[1.05] tracking-[-.02em]">Qual é o seu nome<br />completo?</h2>
+        <div className="grid h-8 w-8 place-items-center rounded-full bg-[#c84ee6] text-lg">↓</div>
+        <input autoFocus value={name} onChange={e => setName(e.target.value)} onKeyDown={e => e.key === "Enter" && continueWithName()} placeholder="Digite seu nome completo (obrigatório)" aria-label="Nome completo" className="w-full rounded-xl border-4 border-[#b66bd8] bg-white px-3 py-4 text-[16px] text-[#555] outline-none placeholder:text-[#aaa]" />
+        <button type="button" onClick={continueWithName} className={buttonClass} disabled={!validName}>Continuar</button>
+      </> : <>
+        <p className="max-w-[340px] text-[16px] leading-[1.3]">Digite o seu <strong>e-mail</strong> para receber o resultado da sua <strong>vida passada</strong>...</p>
+        <h2 className="text-[31px] font-black leading-[1.05]">Qual é o seu e-mail?</h2>
+        <div className="grid h-8 w-8 place-items-center rounded-full bg-[#c84ee6] text-lg">↓</div>
+        <input autoFocus type="email" value={email} onChange={e => setEmail(e.target.value)} onKeyDown={e => e.key === "Enter" && submitLead()} placeholder="Insira seu endereço de e-mail (obrigatório)" aria-label="E-mail" className="w-full rounded-xl border-4 border-[#b66bd8] bg-white px-3 py-4 text-[16px] text-[#555] outline-none placeholder:text-[#aaa]" />
+        <button type="button" onClick={submitLead} className={buttonClass} disabled={!validEmail}>Ver meu resultado</button>
+        <button type="button" onClick={() => setStep("fullName")} className="text-sm font-bold text-white/80 underline">Voltar</button>
+      </>}
+    </div>
+  </main>;
 }
 
 export default function Home() {
